@@ -90,6 +90,7 @@ export interface ConsumerOptions {
   handleMessageTimeout?: number;
   handleMessage?(message: SQSMessage): Promise<void>;
   handleMessageBatch?(messages: SQSMessage[]): Promise<void>;
+  throttleCheck?(points: number): Promise<void>;
 }
 
 interface Events {
@@ -108,6 +109,7 @@ export class Consumer extends EventEmitter {
   private handleMessage: (message: SQSMessage) => Promise<void>;
   private handleMessageBatch: (message: SQSMessage[]) => Promise<void>;
   private handleMessageTimeout: number;
+  private throttleCheck: (points: number) => Promise<void>;
   private attributeNames: string[];
   private messageAttributeNames: string[];
   private stopped: boolean;
@@ -127,6 +129,7 @@ export class Consumer extends EventEmitter {
     this.handleMessage = options.handleMessage;
     this.handleMessageBatch = options.handleMessageBatch;
     this.handleMessageTimeout = options.handleMessageTimeout;
+    this.throttleCheck = options.throttleCheck;
     this.attributeNames = options.attributeNames || [];
     this.messageAttributeNames = options.messageAttributeNames || [];
     this.stopped = true;
@@ -223,6 +226,11 @@ export class Consumer extends EventEmitter {
 
   private async receiveMessage(params: ReceiveMessageRequest): Promise<ReceieveMessageResponse> {
     try {
+      //block, checking if there are enough tokens in the rate-limiter buckets
+      if (this.throttleCheck) {
+        await this.throttleCheck(this.batchSize);
+      }
+
       return await this.sqs
         .receiveMessage(params)
         .promise();
